@@ -25,7 +25,9 @@ yum install libpng12 compat-libf2c-34
 
 ## Usage
 
-The software expects two files present for any species being designed for: `foo.refMrna.fna` and `foo.mrna_to_gene.txt`. Examples for human (hg19) and mouse (mm10) are included in the repository. Invocation is of the form
+The software expects two files present for any species being designed for: `foo.refMrna.fna.gz` and `foo.mrna_to_gene.txt`. Examples for human (hg19) and mouse (mm10) are included in the repository. Uncompressed .fna (FASTA nucleotide) files are also accepted, but git limits individual files to 100MB, so gzip is the default. 
+
+Invocation is of the form
 
 ```bash
 rnaspace <gene name> <species> <design output.txt>
