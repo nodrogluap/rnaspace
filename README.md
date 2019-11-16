@@ -9,10 +9,6 @@ This software designs two oligonucletide (oligo) probes for any given gene:
   * the "RE" oligo to generate a RNA:DNA duplex in the known transcripts of interest
   * the sequence-specific RTA Oligo B 
 
-## Quick Start
-
-Precalculated oligos for quasi-full length RefSeq transcript elucidation from human or mouse are available at [http://nanopore.space](http://nanopore.space).
-
 ## Installation
 
 The software itself is a fairly simple Perl script, with no library dependencies, and so should work out of the box on most Linux systems. BUT...
@@ -38,3 +34,5 @@ For example:
 ```bash
 rnaspace ADH1A hg19 my_outputted_adh1a_design_choices.txt
 ```
+
+If you would like to target something other than the further 3' site possible in a transcript, simply place the FastA record in a file, truncated to the part of the transcript you would like, and limit the mrna_to_gene file to the one line describing your FastA file.
