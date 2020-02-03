@@ -172,9 +172,9 @@ sub design_and_print_rta{
   my $RMX_duplex = "TGATGATGAGGGATAGACGATGGTTG";
 
   my %restriction_enzyme_min_flank = (
-    # The enzymes that have been specifcally tested for minimum flanking with 50-100% 
+    # The enzymes that have been specifcally tested for minimum flanking with 50-100%. Is actually 3 but doing 4 for rna justy to be safe 
     # activity in DNA, as per https://international.neb.com/tools-and-resources/usage-guidelines/cleavage-close-to-the-end-of-dna-fragments
-    AvrII  => 3
+    AvrII  => 4 
   );
 
   # While some NEB RE's are designated as insensitive to methylation in *DNA*, let's play it safe and ignore candidate sites with these motifs in RNA
@@ -188,10 +188,10 @@ sub design_and_print_rta{
   # ONT protocol particulars for the RTA design
   my $Oligo_A = "/5PHOS/GGCTTCTTCTTGCTCTTAGGTAGTAGGTTC";
   my $Oligo_B_fixed = "GAGGCGAGCGGTCAATTTTCCTAAGAGCAAGAAGAAGCC";
-  my $Oligo_RE_suffix_length = $restriction_enzyme_incubation_temperature{$enzyme} > 37 ? 28 : 20; # the thing we're customizing to be complementary to the target RNA for step 2,
+  my $Oligo_RE_suffix_length = $restriction_enzyme_incubation_temperature{$enzyme} > 37 ? 28 : 10; # the thing we're customizing to be complementary to the target RNA for step 2,
   #my $Oligo_B_suffix_length = 16; # the thing we're customizing to be complementary to the target RNA for step 3
   #                                # this is in keeping with typical 16base long poly d(T) biotinylated oligo capture of polyA RNA by streptavidin
-  my $Oligo_B_suffix_length = 24;
+  my $Oligo_B_suffix_length = 16;
   my $Oligo_RE_prefix_length = $restriction_enzymes_cleavage_site{$enzyme} +
                                (exists $restriction_enzyme_min_flank{$enzyme} ? $restriction_enzyme_min_flank{$enzyme} 
                                : 6); # to maintain activity, flank by 6 unless otherwise indicated according to rule 
@@ -277,6 +277,7 @@ END
   for my $transcript_name (sort keys %$frags_ref){
     my $frags = $frags_ref->{$transcript_name};
     my $first_frag = uc($frags->[$#{$frags}-1]); # here "first" means first *cleaved* frag (not the polyA end)
+    my $next_frag = uc($frags->[$#{$frags}]);
     $first_frag =~ tr/T/U/; # to remind the reader that thr template is RNA
     my $first_frag_length = length($first_frag);
     my $total_length = $first_frag_length;
@@ -285,7 +286,7 @@ END
     }
     my $end_length = length($frags->[$#{$frags}]);
     $total_length += $end_length; # the last bit that will usually have a polyA on it
-    print OUT "$transcript_name\t",($total_length-$end_length),"/$total_length\t", ($first_frag_length < 30 ? $first_frag : "...".substr($first_frag, -30)), "\n";
+    print OUT "$transcript_name\t",($total_length-$end_length),"/$total_length\t", ($first_frag_length < 30 ? $first_frag : "...".substr($first_frag, -30)), " / ", substr($next_frag, 0, 30),"\n";
   }
 
   if($num_cut != $num_transcripts){
