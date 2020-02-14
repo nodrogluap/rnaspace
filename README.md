@@ -30,3 +30,6 @@ rnaspace ADH1A hg19 my_outputted_adh1a_design_choices.txt
 ```
 
 If you would like to target something other than the further 3' site possible in a transcript, simply place the FastA record in a file, truncated to the part of the transcript you would like, and limit the mrna_to_gene file to the one line describing your FastA file.
+
+The wet lab protocol using the oligos can be found on [protocols.io](https://www.protocols.io/view/enrichment-of-a-specific-polyadenylated-rna-for-na-88ahzse/abstract).
+
