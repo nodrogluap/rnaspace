@@ -2,22 +2,18 @@
 
 # Paul Gordon (gordonp@ucalgary.ca), 2019
 
-# Double stranded DNA design software for targeted RNA sequencing by 
-# cDNA and Restriction Enzyme (RNA CARESeq), a prep which yields targeted quasi-full-length 
+# DNA oligo design software for targeted RNA sequencing by 
+# cDNA and Restriction Enzyme (RNA SPACE), a prep which yields targeted quasi-full-length 
 # transcript sequencing when used in conjunction with the Oxford Nanopore Technologies (ONT)
 # direct RNA sequenciong protocol.
 
-# CARESeq involves four high level steps to target sequencing of specific transcripts:
-# 1. First strand cDNA synthesis from total RNA using a polydT primer, which generates an RNA:DNA duplex
-# 2. Cleavage of the duplex using a restriction enzyme shown to cleave the RNA strand in RNA:DNA duplexes
-# 3. Duplex disassociation (and DNAase digestion to avoid competitive hybridization in step 4?) 
-# 4. Addition of an "RTA" (ONT parlance) double stranded DNA with custom 3' overhang for targeted hybridization to the cleaved RNA
-# Subsequent steps follow the standard ONT direct RNA protocol.
 # This programs designs the custom RTA with an overhang to hybridize only to the targeted gene's transcripts given
 # the prior use of a specific restriction enzyme.
+# Protocol details at https://dx.doi.org/10.17504/protocols.io.88ahzse
 
 use strict;
-#use warnings;
+use warnings;
+no warnings qw( qw );
 use vars qw(%restriction_enzymes_cleavage_site);
 
 # 0-indexed restriction site location within the motif.
@@ -28,21 +24,26 @@ use vars qw(%restriction_enzymes_cleavage_site);
     BstNI  => 2,
     HaeIII => 2,
     HinfI  => 1,
+    Sau3AI => 0,
     Taq1   => 1
   );
 
-@ARGV == 3 or @ARGV == 4 or die "Usage: $0 <gene name> <species> <design output.txt> [report only one enzyme: ", join(", ", keys %restriction_enzymes_cleavage_site), "]\n";
+@ARGV >= 3 and @ARGV <= 5 or die "Usage: $0 <gene name> <species> <design output.txt> [report only one enzyme: ", join(", ", keys %restriction_enzymes_cleavage_site), "] [report only the named transcript]\n";
 
 # Read the command line parameters provided.
 my $gene = shift @ARGV;
 my $species = shift @ARGV;
 my $outfile = shift @ARGV;
 my $chosen_enzyme = @ARGV ? shift @ARGV : undef;
+my $display_transcript = @ARGV ? shift @ARGV : undef;
 
 # Does the gene name exist in this species?
 my @transcript_names = &gene2transcript_names($species, $gene);
 if(not @transcript_names){
   die "Cannot find any transcripts for gene $gene in $species, aborting.\n"; 
+}
+if(defined $display_transcript and not grep ({$_ eq $display_transcript} @transcript_names)){
+  die "Cannot find requested display transcript '$display_transcript' in defined transcripts for $gene. Valid options are:\n", join("\n", @transcript_names), "\n"; 
 }
 
 # Do we have the required reference files for this species?
@@ -75,7 +76,7 @@ for my $enzyme (defined $chosen_enzyme ? ($chosen_enzyme) : @rna_restriction_enz
   # overhang of the uncleaved motif base(s), plus some of the transcript's 5' bases directly 
   # upstream of the motif as this constitutes the selective hybridization instrument for targeted 
   # sequencing motor protein attachment in the ONT direct RNA sequencing protocol.
-  &design_and_print_rta($enzyme, \%transcript_postdigestion_target, @transcript_names);
+  &design_and_print_rta($enzyme, \%transcript_postdigestion_target, $display_transcript, @transcript_names);
 }
 
 # TODO:
@@ -101,6 +102,7 @@ sub get_rna_restriction_fragments{
     HaeIII => "GGCC",
   # HinfI cleaves the RNA strand only, which is okay for CARESeq.
     HinfI  => "GA.TC",
+    Sau3AI => "GATC",
     Taq1   => "TCGA"
   );
 
@@ -118,7 +120,7 @@ sub get_rna_restriction_fragments{
 }
 
 sub design_and_print_rta{
-  my ($enzyme, $frags_ref, @transcript_names) = @_;
+  my ($enzyme, $frags_ref, $display_transcript, @transcript_names) = @_;
 
   # Other enzymes that cut the same motifs at the same site, a.k.a. isoschizomers
   # (showing efficiency on RNA:DNA duplex left as an exercise to the user).
@@ -129,16 +131,19 @@ sub design_and_print_rta{
     BstNI  => [qw(AjnI BciT130I BseBI Bst2UI EcoRII MvaI Psp6I PspGI)],
     HaeIII => [qw(BshFI BsnI BspANI BsuRI)],
     HinfI  => [],
+    Sau3AI => [qw(Bsp143I BssMI BstMBI DpnII Kzo9I MboI NdeII)], # not considering BstKTI since it cleaves at a different position, would require a separate entry
     Taq1   => []
   );
 
+  # Via https://international.neb.com/tools-and-resources/usage-guidelines/activity-at-37c-for-restriction-enzymes-with-alternate-incubation-temperatures
   my %restriction_enzyme_incubation_temperature = (
     AvaII  => 37,
     AvrII  => 37,
     BanI   => 37,
-    BstNI  => 37,
+    BstNI  => 60,
     HaeIII => 37,
     HinfI  => 37,
+    Sau3AI => 37,
     Taq1   => 65
   );
 
@@ -146,9 +151,10 @@ sub design_and_print_rta{
     AvaII  => "G!GWCC",
     AvrII  => "C!CTAGG",
     BanI   => "G!GYRCC",
-    BstNI => "CC!WGG",
+    BstNI  => "CC!WGG",
     HaeIII => "GG!CC",
     HinfI  => "G!ANTC",
+    Sau3AI => "!GATC",
     Taq1   => "T!CGA"
   );
 
@@ -162,6 +168,7 @@ sub design_and_print_rta{
     BstNI  => undef,
     HaeIII => 80,
     HinfI  => 80,
+    Sau3AI => 65,
     Taq1   => undef
   );
 
@@ -174,34 +181,47 @@ sub design_and_print_rta{
   my %restriction_enzyme_min_flank = (
     # The enzymes that have been specifcally tested for minimum flanking with 50-100%. Is actually 3 but doing 4 for rna justy to be safe 
     # activity in DNA, as per https://international.neb.com/tools-and-resources/usage-guidelines/cleavage-close-to-the-end-of-dna-fragments
-    AvrII  => 4 
+    AvrII  => 4,
+    # ibid. Actually 0, but playing it super safe.
+    Sau3AI => 3
   );
 
-  # While some NEB RE's are designated as insensitive to methylation in *DNA*, let's play it safe and ignore candidate sites with these motifs in RNA
-  my %rna_methylation_motifs = {
+  # TODO: While some NEB RE's are designated as insensitive to methylation in *DNA*, let's play it safe and ignore candidate sites with these motifs in RNA
+  my %rna_methylation_motifs = (
     # Core of motif from https://www.nature.com/articles/nature24456.pdf
     m1a => "G.UC.A", # potentially overlaps Taq1
     # The following motif is manually derived from looking at motifs in RMBase v 2.0 
     m6a => "G[GA]AC" # potentially overlaps AvaII, HinfI
-  };
+  );
 
   # ONT protocol particulars for the RTA design
   my $Oligo_A = "/5PHOS/GGCTTCTTCTTGCTCTTAGGTAGTAGGTTC";
   my $Oligo_B_fixed = "GAGGCGAGCGGTCAATTTTCCTAAGAGCAAGAAGAAGCC";
-  my $Oligo_RE_suffix_length = $restriction_enzyme_incubation_temperature{$enzyme} > 37 ? 28 : 10; # the thing we're customizing to be complementary to the target RNA for step 2,
-  #my $Oligo_B_suffix_length = 16; # the thing we're customizing to be complementary to the target RNA for step 3
-  #                                # this is in keeping with typical 16base long poly d(T) biotinylated oligo capture of polyA RNA by streptavidin
-  my $Oligo_B_suffix_length = 16;
-  my $Oligo_RE_prefix_length = $restriction_enzymes_cleavage_site{$enzyme} +
-                               (exists $restriction_enzyme_min_flank{$enzyme} ? $restriction_enzyme_min_flank{$enzyme} 
-                               : 6); # to maintain activity, flank by 6 unless otherwise indicated according to rule 
+  my $ligase_reaction_temperature = 37;
+  my $Oligo_B_suffix_length = 16; # The thing we're customizing to be complementary to the target RNA for step 3
+                                  # this is in keeping with typical 16 base long poly d(T) biotinylated oligo capture of polyA RNA by streptavidin.
+                                  # The value will be adjusted if necessary to be comfortably ($melting_temp_margin below) higher than the downstream T4 ligase 
+                                  # reaction temperature reaction (adapter ligation) that relies on the duplex.
+  # The thing we're customizing to be complementary to the target 3' of the RNA cut site for step 2. Can grow if necessary to get a comfortably higher duplex melting temp than RE incubation temp.
+  my $RE_req_flank = (exists $restriction_enzyme_min_flank{$enzyme} ? $restriction_enzyme_min_flank{$enzyme}
+                               : 7); # To maintain activity, flank by 6 (+1 because RNA:DNA is less stable) unless otherwise indicated according to rule 
                                      # of thumb at https://international.neb.com/tools-and-resources/usage-guidelines/cleavage-close-to-the-end-of-dna-fragments
-
+  my $Oligo_RE_suffix_length = $restriction_enzymes_cleavage_site{$enzyme} + $RE_req_flank;
+  my $iupac_has_cut_char = $restriction_enzyme_iupac{$enzyme} =~ /\!/ ? 1 : 0;
+  # Account for length of recognition site on the DNA strand, and discount ! in the IUPAC string
+  my $Oligo_RE_prefix_length = $RE_req_flank + length($restriction_enzyme_iupac{$enzyme})-$restriction_enzymes_cleavage_site{$enzyme}-$iupac_has_cut_char; 
+  my $melting_temp_margin = 5; # Generally the melting tenmporature is considered the point at which 50% of duplexes are formed. Let's aim for near 100% 
+                               # by moving up that melting curve relative to whatever enzymatic reaction temperature that relies on the duplex (restriction or ligation).
+                               # Curves usually max out at a width of 10 C in 0.1M NaCl at these sorts of lengths.
   # Check if the cut site sequence environs are the same for all transcripts
-  my @three_prime_seqs;
+  my @three_prime_seqs; # for oligo B
   my @three_prime_seq_overhang_melt;
-  my @three_prime_seqs_plus_flank;
+  my @three_prime_seqs_plus_flank; # for oligo RE
   my @three_prime_seqs_plus_flank_melt;
+  my @Oligo_RE_custom_index2CutCount;
+  my %transcript_name2Oligo_RE_custom_index;
+  my %transcript_name2Oligo_B_custom_index;
+  my @RE_prefix_length;
   for my $transcript_name (@transcript_names){
     my $frags = $frags_ref->{$transcript_name};
     next unless defined $frags;
@@ -209,19 +229,40 @@ sub design_and_print_rta{
     my ($seq_end, $next_seq_start, $Oligo_RE_custom);
     while($which_frag >= 0){
       my $frag = $frags->[$which_frag];
-      if(length($frag) < $Oligo_B_suffix_length){
+      if(length($frag) < $Oligo_B_suffix_length or
+         length($frag) < $Oligo_RE_suffix_length){
         # This would mean overlapping RE recognition sites and potentially multiple cuts, so avoid dicing our native RNA, by skipping to the next candidate
         $which_frag--;
         next;
       }
       $seq_end = uc(substr($frag,-1*$Oligo_B_suffix_length));
-      my $seq_RE_end = uc(substr($frag,-1*$Oligo_RE_prefix_length));
+      my $Oligo_B_suffix_length_extension_for_higher_melt = 0;
+      while(melting_temp($seq_end) < $ligase_reaction_temperature+$melting_temp_margin && $Oligo_B_suffix_length+$Oligo_B_suffix_length_extension_for_higher_melt < length($frag)){
+	$Oligo_B_suffix_length_extension_for_higher_melt++;
+	#warn "Trying extended B oligo $seq_end +$Oligo_B_suffix_length_extension_for_higher_melt because ", melting_temp($seq_end), " < ", $ligase_reaction_temperature+$melting_temp_margin, "\n";
+	$seq_end = uc(substr($frag,-1*$Oligo_B_suffix_length-$Oligo_B_suffix_length_extension_for_higher_melt));
+      }
+      my $seq_RE_end = $Oligo_RE_suffix_length < 1 ? "" : uc(substr($frag,-1*$Oligo_RE_suffix_length));
+      # Change in context for "frag" to be the downstream bit from the cut 
       $frag = $frags->[$which_frag+1];
-      $next_seq_start = uc(substr($frag,0,$Oligo_RE_suffix_length));
+      if(length($frag) < $Oligo_RE_prefix_length){
+        # This would mean overlapping RE recognition sites and potentially multiple cuts, so avoid dicing our native RNA, by skipping to the next candidate
+        $which_frag--;
+        next;
+      }
+      $next_seq_start = uc(substr($frag,0,$Oligo_RE_prefix_length));
 
       # Run some basic oligo hairpin and dimer free energy tests so we don't report something that won't form an RNA:DNA duplex nicely.
       $Oligo_RE_custom = &reverse_complement($seq_RE_end.$next_seq_start);
-      if(not &passes_free_energy_checks($Oligo_RE_custom, $seq_end)){
+      my $Oligo_RE_prefix_length_extension_for_higher_melt = 0;
+      while(melting_temp($Oligo_RE_custom) < $restriction_enzyme_incubation_temperature{$enzyme}+$melting_temp_margin && $Oligo_RE_prefix_length+$Oligo_RE_prefix_length_extension_for_higher_melt < length($frag)){
+        $Oligo_RE_prefix_length_extension_for_higher_melt++;
+	#warn "Trying extended RE oligo $Oligo_RE_custom $Oligo_RE_prefix_length+$Oligo_RE_prefix_length_extension_for_higher_melt because ", melting_temp($Oligo_RE_custom), " < ", $restriction_enzyme_incubation_temperature{$enzyme}+$melting_temp_margin,"\n";
+        $next_seq_start = uc(substr($frag,0,$Oligo_RE_prefix_length+$Oligo_RE_prefix_length_extension_for_higher_melt));
+        $Oligo_RE_custom = &reverse_complement($seq_RE_end.$next_seq_start);
+      }
+      if(not &passes_free_energy_checks($Oligo_RE_custom, $seq_end, $restriction_enzyme_incubation_temperature{$enzyme})){
+	warn "Rejected $which_frag fragment\n"; 
         $which_frag--;
         next;
       }
@@ -229,14 +270,23 @@ sub design_and_print_rta{
     }
   
     if($which_frag >= 0){
-      if(not grep {$_ eq $seq_end} @three_prime_seqs){
+      my ($B_index) = grep { $three_prime_seqs[$_] eq $seq_end} (0 .. $#three_prime_seqs);
+      if(not defined $B_index){
         push @three_prime_seqs, $seq_end;
-        push @three_prime_seq_overhang_melt, melting_temp($seq_end); #TODO: account for mismatches
+        push @three_prime_seq_overhang_melt, melting_temp($seq_end);
+	$B_index = $#three_prime_seqs;
       }
-      if(not grep {$_ eq $Oligo_RE_custom} @three_prime_seqs_plus_flank){
+      $transcript_name2Oligo_B_custom_index{$transcript_name} = $B_index;
+
+      my ($RE_index) = grep { $three_prime_seqs_plus_flank[$_] eq $Oligo_RE_custom } (0 .. $#three_prime_seqs_plus_flank);
+      if(not defined $RE_index){
         push @three_prime_seqs_plus_flank, $Oligo_RE_custom;
         push @three_prime_seqs_plus_flank_melt, melting_temp($Oligo_RE_custom);
+        push @RE_prefix_length, length($Oligo_RE_custom) - $Oligo_RE_suffix_length;
+	$RE_index = $#three_prime_seqs_plus_flank;
       }
+      $transcript_name2Oligo_RE_custom_index{$transcript_name} = $RE_index;
+      $Oligo_RE_custom_index2CutCount[$RE_index]++;
     }
   }
   return if not @three_prime_seqs;
@@ -245,14 +295,14 @@ sub design_and_print_rta{
 
   print OUT <<END;
 
-SPACE oligos for $gene in $species:
+RNA SPACE oligos for $gene in $species:
 
 END
 
   for (my $i = 0; $i <= $#three_prime_seqs_plus_flank; $i++){
     my $Oligo_RE_custom = $three_prime_seqs_plus_flank[$i];
     my $Oligo_RE_custom_melt = $three_prime_seqs_plus_flank_melt[$i];
-    printf OUT "Oligo RE%d: 5’- %s (melting temp against target RNA: %.1f C)\n", ($i+1), $Oligo_RE_custom, $Oligo_RE_custom_melt;
+    printf OUT "Oligo RE%d (cuts %d seqs): 5’- %s (melting temp against target RNA: %.1f C)\n", ($i+1), $Oligo_RE_custom_index2CutCount[$i], $Oligo_RE_custom, $Oligo_RE_custom_melt;
   }
   print OUT "RTA Oligo A (ONT standard): 5’- $Oligo_A\n";
   for (my $i = 0; $i <= $#three_prime_seqs; $i++){
@@ -263,12 +313,15 @@ END
   my $num_cut = scalar(keys %$frags_ref);
   my $num_transcripts = scalar(@transcript_names);
   my $temperature = $restriction_enzyme_incubation_temperature{$enzyme};
+  my $inact_temperature = defined $restriction_enzyme_inactivation_temp{$enzyme} ? $restriction_enzyme_inactivation_temp{$enzyme} : "N/A";
   my $iupac_motif = $restriction_enzyme_iupac{$enzyme};
 
   print OUT <<END;
 
 Restriction enzyme to use: $enzyme (recognition motif $iupac_motif)
-Incubation temperature: $temperature C
+RE incubation temperature: $temperature C
+RE inactivation temperature: $inact_temperature C
+T4 ligation temperature: $ligase_reaction_temperature C
 Alternative isoschizomers (RNA:DNA cleavage activity untested): $isoschizomers
 
 Expected direct RNA sequencing (3' -> 5') start locations in ($num_cut/$num_transcripts) known transcripts for $gene: 
@@ -277,8 +330,9 @@ END
   for my $transcript_name (sort keys %$frags_ref){
     my $frags = $frags_ref->{$transcript_name};
     my $first_frag = uc($frags->[$#{$frags}-1]); # here "first" means first *cleaved* frag (not the polyA end)
+    $first_frag =~ tr/T/U/; # to remind the reader that the template is RNA
     my $next_frag = uc($frags->[$#{$frags}]);
-    $first_frag =~ tr/T/U/; # to remind the reader that thr template is RNA
+    $next_frag =~ tr/T/U/; # to remind the reader that the template is RNA
     my $first_frag_length = length($first_frag);
     my $total_length = $first_frag_length;
     for (my $i = $#{$frags}-2; $i >= 0; $i--){
@@ -286,7 +340,23 @@ END
     }
     my $end_length = length($frags->[$#{$frags}]);
     $total_length += $end_length; # the last bit that will usually have a polyA on it
-    print OUT "$transcript_name\t",($total_length-$end_length),"/$total_length\t", ($first_frag_length < 30 ? $first_frag : "...".substr($first_frag, -30)), " / ", substr($next_frag, 0, 30),"\n";
+
+    next unless not defined $display_transcript or $transcript_name eq $display_transcript;
+    my $which_Oligo_RE_custom_index = $transcript_name2Oligo_RE_custom_index{$transcript_name};
+    my $which_Oligo_B_custom_index = $transcript_name2Oligo_B_custom_index{$transcript_name};
+    my $visual_seq_precontext = 30 < length($three_prime_seqs[$which_Oligo_RE_custom_index]) ? length($three_prime_seqs[$which_Oligo_RE_custom_index]) : 30;
+    my $visual_seq_postcontext = 30 < length($RE_prefix_length[$which_Oligo_RE_custom_index]) ? length($RE_prefix_length[$which_Oligo_RE_custom_index]) : 30;
+    my $precut_content = "$transcript_name with Oligos RE". ($which_Oligo_RE_custom_index+1). "+B". ($which_Oligo_B_custom_index+1). 
+                         "   ".($total_length-$end_length). "   ". ($first_frag_length < $visual_seq_precontext ? $first_frag : "...".substr($first_frag, -$visual_seq_precontext));
+    my $RE_precut_visual = "3' ". ("R" x $Oligo_RE_suffix_length);
+    my $RE_postcut_visual = ("R" x $RE_prefix_length[$which_Oligo_RE_custom_index]). " 5'";
+    my $cut_site_visual = "  /  ";
+    my $RE_site_visual = "[".$enzyme.(" " x (length($iupac_motif)-$iupac_has_cut_char-length($enzyme)+length($cut_site_visual)-2))."]";
+    my $B_visual = "3' " . ("B" x length($three_prime_seqs[$which_Oligo_RE_custom_index]));
+    print OUT (" " x (length($precut_content) - length($RE_precut_visual))), $RE_precut_visual, (" " x length($cut_site_visual)), $RE_postcut_visual, "\n";
+    print OUT (" " x (length($precut_content) - $restriction_enzymes_cleavage_site{$enzyme} - $RE_req_flank)), ("-" x $RE_req_flank), $RE_site_visual, ("-" x $RE_req_flank), "\n";
+    print OUT $precut_content, $cut_site_visual, substr($next_frag, 0, $visual_seq_postcontext),"... 3'\n";
+    print OUT (" " x (length($precut_content) - length($B_visual))), $B_visual, ">===Ligating=RTA=Oligos=A=B=Overhanging=Duplex===<\n\n";
   }
 
   if($num_cut != $num_transcripts){
@@ -323,7 +393,7 @@ sub passes_free_energy_checks{
   # Match Enthalpy from SantaLucia (1998), PNAS 95:1460-1465
   # Self mismatch data from Peyret et al (1999) Biochem. 38:3468-77
   # NOTE: A-C mismatches are highly pH sensitive.  The default values
-  # used are for pH of 7. Buffered Tris Hcl pH7.5 is often used in nanopore reactions?
+  # used are for pH of 7. Buffered Tris HCl pH7.5 is often used in nanopore reactions?
   my %nn_h =  qw(
   aa,tt -7.9
   tt,aa -7.9
@@ -480,11 +550,15 @@ sub passes_free_energy_checks{
 
   # Slide the oligo on itself to check self-complementarity: 0 = complete, length($oligo-2) is one base of overlap
   for my $seq ($oligo, $seq_end){
-    for my $i (0..length($oligo-2)){ 
+    for my $i (0 .. (length($oligo)-2)){ 
       my $dS = 0;
       my $dH = 0;
-      for my $j ($i..length($oligo-2)){
-        my $nn = lc(substr($oligo, $j, 1).substr($oligo, $j+1, 1).",".substr($oligo, $j, 1));
+      for my $j ($i .. (length($oligo)-2)){
+        my $nn = lc(substr($oligo, $j, 2).",".reverse(substr($oligo, -($j+2), 2)));
+	if(not exists $nn_s{$nn}){
+	#	warn "No NN data for $nn\n";
+		next; # not a one base mismatch, ignore it as contributing to structure positively
+	}
         $dS += $nn_s{$nn};
         $dH += $nn_h{$nn};
       }
@@ -492,6 +566,7 @@ sub passes_free_energy_checks{
       my $dG = $dH - (274.15+$temperature_C)*$dS;
     }
   }
+  #TODO: hairpin
 
   if($free_energy_dimer < $free_energy_limit_dimer or
      $free_energy_hairpin < $free_energy_limit_hairpin){
