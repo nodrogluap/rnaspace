@@ -11,13 +11,7 @@ This software designs two oligonucletide (oligo) probes for any given gene:
 
 ## Installation
 
-The software itself is a fairly simple Perl script, with no library dependencies, and so should work out of the box on most Linux systems. BUT...
-
-The designed oligos are checked for undesireable features such as hairpin or dimer formation by using the third party software quikfold from the [mfold package](http://unafold.rna.albany.edu/?q=mfold/download-mfold), which must be downloaded separately. Pre-built mfold suite binaries are available for RedHat/CentOS [here](http://unafold.rna.albany.edu/download/mfold-3.5-Cross-RedHat-binaries.tar.gz), and requires library dependency installation like so:
-
-```bash
-yum install libpng12 compat-libf2c-34
-```
+The software itself is a fairly simple Perl script, with no library dependencies, and so should work out of the box on most Linux systems. 
 
 ## Usage
 
@@ -36,3 +30,6 @@ rnaspace ADH1A hg19 my_outputted_adh1a_design_choices.txt
 ```
 
 If you would like to target something other than the further 3' site possible in a transcript, simply place the FastA record in a file, truncated to the part of the transcript you would like, and limit the mrna_to_gene file to the one line describing your FastA file.
+
+The wet lab protocol using the oligos can be found on [protocols.io](https://www.protocols.io/view/enrichment-of-a-specific-polyadenylated-rna-for-na-88ahzse/abstract).
+
